@@ -1548,39 +1548,39 @@ static const struct attribute_group ist30xx_attr_group = {
 	.attrs = ist30xx_attrs,
 };
 
-static int ist30xx_proc_init(struct ist30xx_data *data)
+static int ist30xx_proc_init(struct kobject *sysfs_node_parent)
 {
-       struct i2c_client *client = data->client;
+	int ret = 0;
+	char *driver_path;
 
-       int ret = 0;
-       char *buf, *path = NULL;
-       char *key_disabler_sysfs_node;
-       struct proc_dir_entry *proc_entry_tp = NULL;
-       struct proc_dir_entry *proc_symlink_tmp = NULL;
+	struct proc_dir_entry *proc_entry_ts;
 
-       buf = kzalloc(sizeof(struct ist30xx_data), GFP_KERNEL);
-       if (buf)
-               path = "/devices/soc.0/78b9000.i2c/i2c-5/5-0050";
+	// allocate memory for input device path
+	driver_path = kzalloc(PATH_MAX, GFP_KERNEL);
+	if(!driver_path) {
+		ret = -ENOMEM;
+		pr_err("%s: failed to allocate memory\n", __func__);
+		goto exit;
+	}
 
-       proc_entry_tp = proc_mkdir("touchpanel", NULL);
-       if (proc_entry_tp == NULL) {
-               dev_err(&client->dev, "Couldn't create touchpanel dir in procfs\n");
-               ret = -ENOMEM;
-       }
+	// store input device path
+	sprintf(driver_path, "/sys%s",
+			kobject_get_path(sysfs_node_parent, GFP_KERNEL));
 
-       key_disabler_sysfs_node = kzalloc(sizeof(struct ist30xx_data), GFP_KERNEL);
-       if (key_disabler_sysfs_node)
-               sprintf(key_disabler_sysfs_node, "/sys%s/%s", path, "disable_keys");
-       proc_symlink_tmp = proc_symlink("capacitive_keys_enable",
-                       proc_entry_tp, key_disabler_sysfs_node);
-       if (proc_symlink_tmp == NULL) {
-               dev_err(&client->dev, "Couldn't create capacitive_keys_enable symlink\n");
-               ret = -ENOMEM;
-       }
+	pr_debug("%s: driver_path:%s\n", __func__, driver_path);
 
-       kfree(buf);
-       kfree(key_disabler_sysfs_node);
-       return ret;
+	// symlink /proc/touchscreen to input device
+	proc_entry_ts = proc_symlink("touchscreen", NULL, driver_path);
+	if (!proc_entry_ts) {
+		ret = -ENOMEM;
+		pr_err("%s: failed to symlink to touchscreen\n", __func__);
+		goto free_driver_path;
+	}
+
+free_driver_path:
+	kfree(driver_path);
+exit:
+	return ret;
 }
 
 static int ist30xx_probe(struct i2c_client *client,
@@ -1853,7 +1853,7 @@ static int ist30xx_probe(struct i2c_client *client,
 		goto err_sysfs;
         }
 
-        ist30xx_proc_init(data);
+        ist30xx_proc_init(&client->dev.kobj);
 	data->initialized = true;
 
 	tsp_info("### IMAGIS probe success ###\n");
